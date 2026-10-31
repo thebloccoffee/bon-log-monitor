@@ -73,6 +73,49 @@ GPBCamera *gpb_open(char *model, size_t modelLen, char *err, size_t errLen) {
     return cam;
 }
 
+GPBCamera *gpb_open_path(const char *path, const char *driverModel, char *model, size_t modelLen,
+                         char *err, size_t errLen) {
+    GPContext *context = gp_context_new();
+    if (!abilitiesList) {
+        gp_abilities_list_new(&abilitiesList);
+        gp_abilities_list_load(abilitiesList, context);
+        gp_port_info_list_new(&portList);
+        gp_port_info_list_load(portList);
+    }
+    GPBCamera *cam = calloc(1, sizeof(GPBCamera));
+    cam->context = context;
+    CameraAbilities abilities;
+    GPPortInfo portInfo;
+    int r = gp_camera_new(&cam->camera);
+    int mi = gp_abilities_list_lookup_model(abilitiesList, driverModel);
+    int pi = gp_port_info_list_lookup_path(portList, path);
+    if (r >= GP_OK) r = mi < 0 ? mi : gp_abilities_list_get_abilities(abilitiesList, mi, &abilities);
+    if (r >= GP_OK) r = gp_camera_set_abilities(cam->camera, abilities);
+    if (r >= GP_OK) r = pi < 0 ? pi : gp_port_info_list_get_info(portList, pi, &portInfo);
+    if (r >= GP_OK) r = gp_camera_set_port_info(cam->camera, portInfo);
+    if (r >= GP_OK) r = gp_camera_init(cam->camera, cam->context);
+    if (r < GP_OK) {
+        snprintf(err, errLen, "%s", gp_result_as_string(r));
+        if (cam->camera) {
+            gp_camera_exit(cam->camera, cam->context);
+            gp_camera_free(cam->camera);
+        }
+        gp_context_unref(cam->context);
+        free(cam);
+        return NULL;
+    }
+    // The generic PTP/IP driver doesn't know the body's name; ask the camera.
+    CameraText summary;
+    model[0] = '\0';
+    if (gp_camera_get_summary(cam->camera, &summary, cam->context) >= GP_OK) {
+        const char *m = strstr(summary.text, "Model: ");
+        if (m) sscanf(m + 7, "%127[^\n]", model);
+    }
+    if (!model[0]) snprintf(model, modelLen, "%s", driverModel);
+    gp_file_new(&cam->previewFile);
+    return cam;
+}
+
 void gpb_close(GPBCamera *cam) {
     if (!cam) return;
     gp_file_free(cam->previewFile);

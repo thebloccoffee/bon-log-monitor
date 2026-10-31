@@ -5,6 +5,7 @@ import MonitorCore
 
 enum SourceKind: String, CaseIterable, Identifiable {
     case sony = "Sony camera (USB)"
+    case wifi = "Sony camera (Wi-Fi)"
     case demo = "Demo (file / test chart)"
     var id: String { rawValue }
 }
@@ -17,8 +18,28 @@ enum ZebraMode: String, CaseIterable, Identifiable {
 
 /// View + overlay state. Everything the shader needs comes out of `uniforms()`.
 final class MonitorModel: ObservableObject {
-    @Published var source: SourceKind = .sony { didSet { if source != oldValue { switchSource() } } }
-    @Published private(set) var camera: CameraController = GPhotoCamera() { didSet { followPictureProfile() } }
+    /// Last-used source, so a Wi-Fi rig comes back up on Wi-Fi.
+    @Published var source: SourceKind = MonitorModel.savedSource {
+        didSet {
+            UserDefaults.standard.set(source.rawValue, forKey: "source")
+            if source != oldValue { switchSource() }
+        }
+    }
+    @Published private(set) var camera: CameraController = MonitorModel.initialCamera() { didSet { followPictureProfile() } }
+
+    private static var savedSource: SourceKind {
+        UserDefaults.standard.string(forKey: "source").flatMap(SourceKind.init(rawValue:)) ?? .sony
+    }
+
+    private static func initialCamera() -> CameraController {
+        switch savedSource {
+        case .demo: return DemoCamera()
+        case .sony: return GPhotoCamera()
+        case .wifi:
+            let host = (UserDefaults.standard.string(forKey: "wifiHost") ?? "").trimmingCharacters(in: .whitespaces)
+            return GPhotoCamera(wifiHost: host.isEmpty ? "0.0.0.0" : host)
+        }
+    }
 
     @Published var viewRec709 = true
     @Published var profile: LogProfile = .slog3SGamut3Cine
@@ -160,17 +181,73 @@ final class MonitorModel: ObservableObject {
         (camera as? DemoCamera)?.open(url: url)
     }
 
+    // MARK: Wi-Fi
+
+    /// Camera IP for PC Remote over Wi-Fi; remembered between launches.
+    @Published var wifiHost = UserDefaults.standard.string(forKey: "wifiHost") ?? "" {
+        didSet { UserDefaults.standard.set(wifiHost, forKey: "wifiHost") }
+    }
+    @Published private(set) var wifiNote = ""
+    @Published private(set) var wifiBusy = false
+    @Published private(set) var foundCameras: [(name: String, host: String)] = []
+
+    func findWiFiCameras() {
+        wifiBusy = true
+        wifiNote = "Searching the network…"
+        DispatchQueue.global().async {
+            let found = WiFiLink.discover()
+            DispatchQueue.main.async {
+                self.wifiBusy = false
+                self.foundCameras = found
+                if let first = found.first, self.wifiHost.isEmpty || !found.contains(where: { $0.host == self.wifiHost }) {
+                    self.wifiHost = first.host
+                }
+                self.wifiNote = found.isEmpty
+                    ? "No camera found. Is it on the same Wi-Fi with PC Remote on?"
+                    : found.map { "\($0.name) at \($0.host)" }.joined(separator: ", ")
+            }
+        }
+    }
+
+    /// One-time pairing: the camera must be in Network › PC Remote Function › Pairing.
+    func pairWiFi() {
+        let host = wifiHost.trimmingCharacters(in: .whitespaces)
+        guard !host.isEmpty else { wifiNote = "Enter or find the camera's IP first."; return }
+        camera.shutdown()
+        wifiBusy = true
+        wifiNote = "On the camera: PC Remote Function › Pairing, then press OK…"
+        DispatchQueue.global().async {
+            let result = WiFiLink.pair(host: host)
+            DispatchQueue.main.async {
+                self.wifiBusy = false
+                switch result {
+                case .paired: self.wifiNote = "Paired. Connecting…"
+                case .timedOut: self.wifiNote = "Pairing timed out. Start Pairing on the camera and try again."
+                case .failed(let why): self.wifiNote = "Pairing failed: \(why)"
+                }
+                self.reconnect()
+            }
+        }
+    }
+
     func reconnect() {
-        guard source == .sony else { return }
+        guard source != .demo else { return }
         camera.disconnect()
-        camera = GPhotoCamera()
+        camera = makeCamera()
+    }
+
+    private func makeCamera() -> CameraController {
+        switch source {
+        case .demo: return DemoCamera()
+        case .sony: return GPhotoCamera()
+        case .wifi:
+            let host = wifiHost.trimmingCharacters(in: .whitespaces)
+            return GPhotoCamera(wifiHost: host.isEmpty ? "0.0.0.0" : host)
+        }
     }
 
     private func switchSource() {
         camera.disconnect()
-        switch source {
-        case .demo: camera = DemoCamera()
-        case .sony: camera = GPhotoCamera()
-        }
+        camera = makeCamera()
     }
 }

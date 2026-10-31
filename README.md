@@ -6,7 +6,7 @@ A macOS field monitor for Sony cameras shooting S-Log. Plug the camera in over U
 
 ## Features
 
-- **Live view** over USB with a log ↔ Rec.709 toggle: S-Log3 / S-Gamut3.Cine, S-Log3 / S-Gamut3, S-Log2 / S-Gamut.
+- **Live view** over USB or Wi-Fi with a log ↔ Rec.709 toggle: S-Log3 / S-Gamut3.Cine, S-Log3 / S-Gamut3, S-Log2 / S-Gamut.
 - **Exposure tools** on the Rec.709 image: zebras (above a level or a range), false color, skin-tone band.
 - **Camera control** from the readout bar: iris, shutter, ISO, white balance, focus mode, focus area, picture profile, record with timer.
 - **Touch focus**: click the picture (or tap it on your phone) and the camera reacts as if you touched its own screen (Sony RemoteTouch). In MF it does a one-shot AF on that spot; in AF it moves the spot / starts tracking per your camera's touch settings.
@@ -50,9 +50,21 @@ For touch focus, set **Touch Operation** On and **Touch Func. in Shooting** to T
 
 PC Remote over USB carries no audio (verified on the FX3: no audio levels in any property or in the live view data). For the camera's own audio on the meters, run its HDMI out into a capture card and pick the card under **Audio** in the sidebar.
 
+## Connecting over Wi-Fi
+
+USB has lower latency. Over Wi-Fi the FX3 sends the same 1024×576 live view at about 17 fps, with a little more delay that depends on your network.
+
+1. On the camera, join the same Wi-Fi as the Mac: **Network → Wi-Fi → Access Point Set**.
+2. **Network → PC Remote Function**: PC Remote **On**, Connection Method **Wi-Fi Access Point Connection**.
+3. **Network → Network Option → Access Authen. Settings**: Access Authen. **Off**. With it on, the camera only accepts Sony's own login, which the app can't do.
+4. In the app sidebar, set Source to **Sony camera (Wi-Fi)** and press **Find** (or type the camera's IP).
+5. First time only: press **Pair…**, then on the camera choose **PC Remote Function → Pairing** and confirm. The camera remembers this Mac after that.
+
+The app remembers the source and IP, so it reconnects on its own next launch. If the camera stops answering, turn it off and on.
+
 ## Tested cameras
 
-- Sony **FX3** (firmware 7.02): live view, exposure control, touch focus.
+- Sony **FX3** (firmware 7.02): live view, exposure control, touch focus, over USB and Wi-Fi.
 
 Other Sony bodies that libgphoto2 supports in PC Remote mode should work; reports and PRs welcome.
 

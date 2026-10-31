@@ -374,6 +374,8 @@ private struct Sidebar: View {
                         Button("Open log clip…") { model.openDemoClip() }
                         Button("Test chart") { (camera as? DemoCamera)?.useTestChart() }
                     }
+                } else if model.source == .wifi {
+                    WiFiSection(model: model, camera: camera)
                 } else if !camera.connected {
                     Button("Reconnect") { model.reconnect() }
                 }
@@ -446,6 +448,28 @@ private struct Sidebar: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .background(Brand.panel)
         }
+    }
+}
+
+private struct WiFiSection: View {
+    @ObservedObject var model: MonitorModel
+    @ObservedObject var camera: CameraController
+
+    var body: some View {
+        TextField("Camera IP", text: $model.wifiHost, prompt: Text("192.168.1.x"))
+            .onSubmit { model.reconnect() }
+        HStack {
+            Button("Find") { model.findWiFiCameras() }
+            Button("Pair…") { model.pairWiFi() }
+                .help("One time per Mac: put the camera in PC Remote Function › Pairing first.")
+            Button(camera.connected ? "Reconnect" : "Connect") { model.reconnect() }
+        }
+        .disabled(model.wifiBusy)
+        if !model.wifiNote.isEmpty {
+            Text(model.wifiNote).font(.caption).foregroundStyle(.secondary)
+        }
+        Text("Camera: Network › PC Remote Function › PC Remote On, Connection Method: Wi-Fi Access Point, Access Authen. Off. USB is lower latency.")
+            .font(.caption2).foregroundStyle(.secondary)
     }
 }
 

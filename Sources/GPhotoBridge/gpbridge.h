@@ -8,6 +8,10 @@ typedef struct GPBCamera GPBCamera;
 /// Opens the first camera gphoto2 auto-detects. On failure returns NULL and writes a
 /// message into `err`.
 GPBCamera *gpb_open(char *model, size_t modelLen, char *err, size_t errLen);
+/// Opens a camera at an explicit port path (e.g. "ptpip:127.0.0.1:5000:5000") with the
+/// given driver model name (e.g. "PTP/IP Camera"). Same error convention as gpb_open.
+GPBCamera *gpb_open_path(const char *path, const char *driverModel, char *model, size_t modelLen,
+                         char *err, size_t errLen);
 void gpb_close(GPBCamera *cam);
 
 /// One live view JPEG. The bytes stay valid until the next gpb_preview call.

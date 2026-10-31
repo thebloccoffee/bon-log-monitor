@@ -199,10 +199,33 @@ final class GPhotoCamera: CameraController {
     /// Main-thread only: settings the user just changed, and until when to trust them.
     private var pending: [SettingID: (value: String, until: Date)] = [:]
 
-    override init() {
+    /// nil = USB; otherwise the camera's IP for PC Remote over Wi-Fi.
+    private let wifiHost: String?
+    private var relay: PTPIPRelay?
+
+    init(wifiHost: String? = nil) {
+        self.wifiHost = wifiHost
         super.init()
-        status = "Connecting over USB…"
+        status = wifiHost.map { "Connecting over Wi-Fi to \($0)…" } ?? "Connecting over USB…"
         queue.async { [weak self] in self?.run() }
+    }
+
+    /// Camera queue. Opens the camera over USB, or over Wi-Fi through the GUID relay.
+    private func open(_ model: inout [CChar], _ err: inout [CChar]) -> OpaquePointer? {
+        guard let host = wifiHost else {
+            Self.stopAppleCameraDaemon()
+            return gpb_open(&model, model.count, &err, err.count)
+        }
+        if relay == nil {
+            let r = PTPIPRelay(host: host)
+            guard r.start() else {
+                err = Array("couldn't start local relay".utf8CString)
+                return nil
+            }
+            relay = r
+        }
+        let port = relay!.port
+        return gpb_open_path("ptpip:127.0.0.1:\(port):\(port)", "PTP/IP Camera", &model, model.count, &err, err.count)
     }
 
     override func currentFrame() -> Frame? {
@@ -286,23 +309,27 @@ final class GPhotoCamera: CameraController {
     /// it switches USB modes or another process lets go of it, and a replug should
     /// just resume.
     private func run() {
+        defer { relay?.stop() }
         while isRunning {
-            Self.stopAppleCameraDaemon()
             var model = [CChar](repeating: 0, count: 128)
             var err = [CChar](repeating: 0, count: 256)
-            guard let c = gpb_open(&model, model.count, &err, err.count) else {
+            guard let c = open(&model, &err) else {
                 let message = String(cString: err)
+                let hint = wifiHost == nil
+                    ? "PC Remote ON, USB, cable in"
+                    : "camera on Wi-Fi, PC Remote ON, paired with this Mac"
                 DispatchQueue.main.async {
                     self.connected = false
-                    self.status = "Waiting for camera (\(message)) — PC Remote ON, USB, cable in"
+                    self.status = "Waiting for camera (\(message)) — \(hint)"
                 }
                 Thread.sleep(forTimeInterval: 2)
                 continue
             }
             let name = String(cString: model)
+            let via = wifiHost.map { "Wi-Fi \($0)" } ?? "USB"
             DispatchQueue.main.async {
                 self.connected = true
-                self.status = "Connected: \(name) (USB)"
+                self.status = "Connected: \(name) (\(via))"
             }
             stream(c)
             gpb_close(c)
